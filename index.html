@@ -1,7 +1,8 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="utf-8">
+  <base target="_top">
+  <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
   <title>Admin Portal</title>
   <style>
@@ -302,32 +303,34 @@
   </div>
 
   <script>
-'use strict';
-    // ── GitHub Pages → GAS bridge ────────────────────────────────────────────
-    const GAS_URL = 'https://script.google.com/macros/s/AKfycbybTIvb70FY-b0UaRJEacVRqvznI6ulI6cXJa9M0-ob0yfM-yN1l5iYPr8DxBNijSBnNg/exec'; // ← paste your /exec URL here
-    const google = { script: { run: null } };
-    google.script.run = (function(){
-      var _s = null, _f = null;
-      var api = {
-        withSuccessHandler: function(fn){ _s = fn; return api; },
-        withFailureHandler: function(fn){ _f = fn; return api; }
-      };
-      return new Proxy(api, {
-        get: function(target, prop){
-          if (prop in target) return target[prop];
-          return function(){
-            var s = _s || function(){}, f = _f || function(){};
-            _s = null; _f = null;
-            var args = Array.from(arguments);
-            fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: prop, params: args }) })
-              .then(function(r){ return r.json(); })
-              .then(function(d){ if (d && d.__error) f(new Error(d.__error)); else s(d); })
-              .catch(function(e){ f(e); });
-          };
-        }
-      });
-    })();
-    // ─────────────────────────────────────────────────────────────────────────
+    // ==========================================
+    // GITHUB PAGES CONFIGURATION
+    // ==========================================
+    // REPLACE THIS URL WITH YOUR DEPLOYED APPS SCRIPT WEB APP URL
+    const GAS_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxk5KJmJlYnnvmIeF8MiJktBCAOYXpBh-UbDwqoCzpE9jBXiLzSoUrZJeQdCsQJzGvunw/exec';
+
+    /**
+     * Replaces google.script.run for GitHub Pages.
+     * Communicates securely via Fetch POST with the text/plain payload workaround 
+     * to prevent CORS preflight blockages by Google Apps Script.
+     */
+    async function callBackend(action, parameters = {}) {
+      try {
+        const response = await fetch(GAS_WEB_APP_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ action, parameters })
+        });
+        const result = await response.json();
+        if (result.error) throw new Error(result.error);
+        return result.data;
+      } catch (error) {
+        console.error(`Error executing ${action}:`, error);
+        throw error;
+      }
+    }
+
+    'use strict';
     const LANG = 'ku';
     const state = {
       adminCode: '',
@@ -356,8 +359,8 @@
       if (!code) return setLoginStatus('Enter admin code.', false);
       setLoginStatus('Authenticating securely...', true);
 
-      google.script.run
-        .withSuccessHandler(function(r){
+      callBackend('adminAuth', { code: code })
+        .then(function(r){
           if (!r || !r.ok) {
             setLoginStatus((r && r.error) ? r.error : 'Invalid admin code.', false);
             return;
@@ -368,10 +371,9 @@
           id('chipAdmin').textContent = 'Administrator: ' + code;
           bootstrap();
         })
-        .withFailureHandler(function(e){
+        .catch(function(e){
           setLoginStatus(e && e.message ? e.message : 'Login failed.', false);
-        })
-        .adminAuth(code);
+        });
     }
 
     window.logout = function logout(){
@@ -404,8 +406,8 @@
     }
 
     function bootstrap(){
-      google.script.run
-        .withSuccessHandler(function(r){
+      callBackend('getDashboardInit', { adminCode: state.adminCode })
+        .then(function(r){
           state.init = r;
           restoreFilters();
           fillFilters(r.filters);
@@ -420,10 +422,9 @@
           applyFilters(); // Setup initial views
           setStatus('System modules loaded successfully.', true);
         })
-        .withFailureHandler(function(e){
+        .catch(function(e){
           setStatus(e && e.message ? e.message : 'Bootstrap framework failed to load.', false);
-        })
-        .getDashboardInit(state.adminCode);
+        });
     }
 
     function fillFilters(f){
@@ -843,24 +844,29 @@ for(let s=1;s<=4;s++){
 }
 
 function loadPostponements(){
-  google.script.run.withSuccessHandler(function(data){
-    let container = document.getElementById('postpone-list');
-    if(!container){
-      container = document.createElement('div');
-      container.id = 'postpone-list';
-      id('tab-lists').appendChild(container);
-    }
-    const html = `<div class="card" style="margin-top:24px"><div style="padding:18px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between"><h3 style="margin:0">List 5: Postponement Requests (Pending)</h3><button class="btn s" onclick="loadPostponements()">Refresh</button></div><div style="padding:18px">${data.length?`<div class="table-wrap"><table><thead><tr><th>Student Code</th><th>Academic Year</th><th>Postpone Type</th><th style="width:200px">Action</th></tr></thead><tbody>`+data.map(p=>`<tr><td>${escapeHtml(p.code)}</td><td>${escapeHtml(p.year)}</td><td>${escapeHtml(p.type)}</td><td><button class="btn s" style="background:#ecfdf3;color:#067647;border-color:#abefc6;margin-right:6px" onclick="decidePostpone('${p.code}','${p.year.replace(/'/g,"\\'")}','${p.type.replace(/'/g,"\\'")}','Accepted')">Accept</button><button class="btn s" style="background:#fef3f2;color:#b42318;border-color:#fecdca" onclick="decidePostpone('${p.code}','${p.year}','${p.type.replace(/'/g,"\\'")}','Rejected')">Reject</button></td></tr>`).join('')+`</tbody></table></div>`:'<div class="small" style="text-align:center;padding:20px;color:var(--muted)">No pending requests</div>'}</div></div>`;
-    container.innerHTML = html;
-  }).getPostponements(state.adminCode);
+  callBackend('getPostponements', { adminCode: state.adminCode })
+    .then(function(data){
+      let container = document.getElementById('postpone-list');
+      if(!container){
+        container = document.createElement('div');
+        container.id = 'postpone-list';
+        id('tab-lists').appendChild(container);
+      }
+      const html = `<div class="card" style="margin-top:24px"><div style="padding:18px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between"><h3 style="margin:0">List 5: Postponement Requests (Pending)</h3><button class="btn s" onclick="loadPostponements()">Refresh</button></div><div style="padding:18px">${data.length?`<div class="table-wrap"><table><thead><tr><th>Student Code</th><th>Academic Year</th><th>Postpone Type</th><th style="width:200px">Action</th></tr></thead><tbody>`+data.map(p=>`<tr><td>${escapeHtml(p.code)}</td><td>${escapeHtml(p.year)}</td><td>${escapeHtml(p.type)}</td><td><button class="btn s" style="background:#ecfdf3;color:#067647;border-color:#abefc6;margin-right:6px" onclick="decidePostpone('${p.code}','${p.year.replace(/'/g,"\\'")}','${p.type.replace(/'/g,"\\'")}','Accepted')">Accept</button><button class="btn s" style="background:#fef3f2;color:#b42318;border-color:#fecdca" onclick="decidePostpone('${p.code}','${p.year}','${p.type.replace(/'/g,"\\'")}','Rejected')">Reject</button></td></tr>`).join('')+`</tbody></table></div>`:'<div class="small" style="text-align:center;padding:20px;color:var(--muted)">No pending requests</div>'}</div></div>`;
+      container.innerHTML = html;
+    });
 }
 
 function decidePostpone(code, year, type, status){
   if(!confirm(status+' postponement for '+code+'?')) return;
   setStatus('Updating...', true);
-  google.script.run.withSuccessHandler(function(){ setStatus('Request '+status.toLowerCase()+'. Email sent.', true); loadPostponements(); })
-    .withFailureHandler(e=>setStatus(e.message,false))
-    .updatePostponementStatus({code:code, year:year, type:type, status:status}, state.adminCode);
+  
+  callBackend('updatePostponementStatus', {
+    payload: {code:code, year:year, type:type, status:status},
+    adminCode: state.adminCode
+  })
+  .then(function(){ setStatus('Request '+status.toLowerCase()+'. Email sent.', true); loadPostponements(); })
+  .catch(e=>setStatus(e.message,false));
 }
 
 function showStage(n){ document.querySelectorAll('.stage-view').forEach(d=>d.style.display='none'); document.getElementById('stage-'+n).style.display='block'; }
@@ -1012,9 +1018,10 @@ function exportListToWord(id,title){
     function deleteAnn(row){
       if(!confirm('Delete this announcement?')) return;
       setStatus('Deleting...', true);
-      google.script.run.withSuccessHandler(function(){ setStatus('Deleted.', true); bootstrap(); })
-        .withFailureHandler(function(e){ setStatus(e.message||'Delete failed', false); })
-        .deleteAnnouncement(row, state.adminCode);
+      
+      callBackend('deleteAnnouncement', { row: row, adminCode: state.adminCode })
+        .then(function(){ setStatus('Deleted.', true); bootstrap(); })
+        .catch(function(e){ setStatus(e.message||'Delete failed', false); });
     }
 
     function renderBackup(){
@@ -1087,32 +1094,35 @@ function exportListToWord(id,title){
           </div>
         </div>`;
       // load config
-      google.script.run.withSuccessHandler(function(cfg){
-        if(cfg){ id('bkFolder').value=cfg.folderId||''; id('bkEmail').value=cfg.email||''; id('bkFreq').value=cfg.freq||'weekly'; if(cfg.days) id('bkDays').value=cfg.days; toggleBkDays(); }
-      }).getBackupConfig();
+      callBackend('getBackupConfig')
+        .then(function(cfg){
+          if(cfg){ id('bkFolder').value=cfg.folderId||''; id('bkEmail').value=cfg.email||''; id('bkFreq').value=cfg.freq||'weekly'; if(cfg.days) id('bkDays').value=cfg.days; toggleBkDays(); }
+        });
     }
     function toggleBkDays(){ id('bkDaysWrap').style.display = id('bkFreq').value==='custom' ? 'block':'none'; }
     function saveBkConfig(){
       const cfg={folderId:id('bkFolder').value.trim(), email:id('bkEmail').value.trim(), freq:id('bkFreq').value, days:parseInt(id('bkDays').value||'7')};
       id('bkStatus').textContent='Saving...';
-      google.script.run.withSuccessHandler(()=>{id('bkStatus').textContent='Configuration saved. Automated backup scheduled.'})
-        .withFailureHandler(e=>{id('bkStatus').textContent=e.message})
-        .saveBackupConfig(cfg, state.adminCode);
+      
+      callBackend('saveBackupConfig', { cfg: cfg, adminCode: state.adminCode })
+        .then(()=>{id('bkStatus').textContent='Configuration saved. Automated backup scheduled.'})
+        .catch(e=>{id('bkStatus').textContent=e.message});
     }
     function runBackupNow(){
       id('bkStatus').textContent='Creating backup...';
-      google.script.run.withSuccessHandler(r=>{id('bkStatus').textContent='Backup created: '+r.fileName; listBackups();})
-        .withFailureHandler(e=>{id('bkStatus').textContent=e.message})
-        .runBackupNow(state.adminCode);
+      callBackend('runBackupNow', { adminCode: state.adminCode })
+        .then(r=>{id('bkStatus').textContent='Backup created: '+r.fileName; listBackups();})
+        .catch(e=>{id('bkStatus').textContent=e.message});
     }
     function listBackups(){
       id('bkList').innerHTML='<div class="small">Loading...</div>';
-      google.script.run.withSuccessHandler(list=>{
-        if(!list.length){ id('bkList').innerHTML='<div class="small">No backups found.</div>'; return; }
-        id('bkList').innerHTML='<div class="table-wrap"><table><thead><tr><th>Date</th><th>File Name</th><th>Link</th></tr></thead><tbody>'+
-          list.map(f=>`<tr><td>${f.date}</td><td>${escapeHtml(f.name)}</td><td><a href="${f.url}" target="_blank">Open</a></td></tr>`).join('')+
-          '</tbody></table></div><div class="small" style="margin-top:6px;color:var(--ok)">Backup data is ready to be sent.</div>';
-      }).listBackups(state.adminCode);
+      callBackend('listBackups', { adminCode: state.adminCode })
+        .then(list=>{
+          if(!list.length){ id('bkList').innerHTML='<div class="small">No backups found.</div>'; return; }
+          id('bkList').innerHTML='<div class="table-wrap"><table><thead><tr><th>Date</th><th>File Name</th><th>Link</th></tr></thead><tbody>'+
+            list.map(f=>`<tr><td>${f.date}</td><td>${escapeHtml(f.name)}</td><td><a href="${f.url}" target="_blank">Open</a></td></tr>`).join('')+
+            '</tbody></table></div><div class="small" style="margin-top:6px;color:var(--ok)">Backup data is ready to be sent.</div>';
+        });
     }
     function sendEmailAnn(){
       const to=id('emTo').value, subj=id('emSubj').value, body=id('emBody').value;
@@ -1122,15 +1132,21 @@ function exportListToWord(id,title){
         const reader=new FileReader();
         reader.onload=function(e){
           const data=e.target.result.split(',')[1];
-          google.script.run.withSuccessHandler(()=>{id('emStatus').textContent='Email sent to '+to;})
-            .withFailureHandler(err=>{id('emStatus').textContent=err.message})
-            .sendEmailAnnouncement({toWhome:to, subject:subj, body:body, fileName:file.name, mimeType:file.type, data:data}, state.adminCode);
+          callBackend('sendEmailAnnouncement', { 
+              payload: {toWhome:to, subject:subj, body:body, fileName:file.name, mimeType:file.type, data:data}, 
+              adminCode: state.adminCode 
+            })
+            .then(()=>{id('emStatus').textContent='Email sent to '+to;})
+            .catch(err=>{id('emStatus').textContent=err.message});
         };
         reader.readAsDataURL(file);
       } else {
-        google.script.run.withSuccessHandler(()=>{id('emStatus').textContent='Email sent to '+to;})
-          .withFailureHandler(err=>{id('emStatus').textContent=err.message})
-          .sendEmailAnnouncement({toWhome:to, subject:subj, body:body}, state.adminCode);
+        callBackend('sendEmailAnnouncement', { 
+            payload: {toWhome:to, subject:subj, body:body}, 
+            adminCode: state.adminCode 
+          })
+          .then(()=>{id('emStatus').textContent='Email sent to '+to;})
+          .catch(err=>{id('emStatus').textContent=err.message});
       }
     }
 
@@ -1171,8 +1187,8 @@ function exportListToWord(id,title){
       id('pmTitle').innerHTML = `Loading student data...`;
       id('pmBody').innerHTML = `<div style="padding:40px; text-align:center; color:var(--muted);">Fetching secured institutional records...</div>`;
       
-      google.script.run
-        .withSuccessHandler(function(p){
+      callBackend('getStudentProfile', { code: code, adminCode: state.adminCode })
+        .then(function(p){
           state.profile = p;
           const stageYear = stageToYearInt(p.student.stage);
           
@@ -1223,11 +1239,10 @@ function exportListToWord(id,title){
           id('pmTitle').innerHTML = `${escapeHtml(p.student.nameKurdish)} <span style="color:var(--muted); font-size:16px; margin-left:12px; font-weight:600;">#${escapeHtml(p.student.uniqueCode)}</span>`;
           id('pmBody').innerHTML = profileHtml(p);
         })
-        .withFailureHandler(function(e){
+        .catch(function(e){
           setStatus(e && e.message ? e.message : 'Institutional profile load failed.', false);
           closeModal();
-        })
-        .getStudentProfile(code, state.adminCode);
+        });
     }
 
     function profileHtml(p){
@@ -1389,15 +1404,15 @@ function exportListToWord(id,title){
       };
       if(!payload.text){ id('bcStatus').textContent = 'Please enter announcement text.'; return; }
       id('bcStatus').textContent = 'Sending...';
-      google.script.run
-        .withSuccessHandler(function(){
+      
+      callBackend('saveAnnouncement', { payload: payload, adminCode: state.adminCode })
+        .then(function(){
           id('bcStatus').textContent = 'Stored successfully in Announcements sheet.';
           setTimeout(function(){ closeBroadcast(); bootstrap(); }, 800);
         })
-        .withFailureHandler(function(e){
+        .catch(function(e){
           id('bcStatus').textContent = e && e.message ? e.message : 'Failed to store.';
-        })
-        .saveAnnouncement(payload, state.adminCode);
+        });
     }
     function editSubject(code, sub){
       var maxFree = 4, maxInvoice = 8;
@@ -1439,42 +1454,37 @@ function exportListToWord(id,title){
     }
 
     function togglePostpone(code, moduleCode, active){
-      google.script.run
-        .withSuccessHandler(function(){
+      callBackend('togglePostponement', { code: code, moduleCode: moduleCode, active: active === 1, adminCode: state.adminCode })
+        .then(function(){
           setStatus('Postponement updated successfully.', true);
           openProfile(code);  // refresh the profile so the badge updates immediately
         })
-        .withFailureHandler(function(e){ setStatus(e && e.message ? e.message : 'Postponement failed.', false); })
-        .togglePostponement(code, moduleCode, active === 1, state.adminCode);
+        .catch(function(e){ setStatus(e && e.message ? e.message : 'Postponement failed.', false); });
     }
 
     function grantOverride(code){
-      google.script.run
-        .withSuccessHandler(function(){ setStatus('Academic ECTS limitation explicitly bypassed.', true); })
-        .withFailureHandler(function(e){ setStatus(e && e.message ? e.message : 'Failure logic returned.', false); })
-        .grantEctsOverride(code, state.adminCode);
+      callBackend('grantEctsOverride', { code: code, adminCode: state.adminCode })
+        .then(function(){ setStatus('Academic ECTS limitation explicitly bypassed.', true); })
+        .catch(function(e){ setStatus(e && e.message ? e.message : 'Failure logic returned.', false); });
     }
 
     function markCompleted(code){
-      google.script.run
-        .withSuccessHandler(function(){ setStatus('Matrix validation degree clearance completed.', true); })
-        .withFailureHandler(function(e){ setStatus(e && e.message ? e.message : 'Failed core operation check.', false); })
-        .markFullyCompleted(code, state.adminCode);
+      callBackend('markFullyCompleted', { code: code, adminCode: state.adminCode })
+        .then(function(){ setStatus('Matrix validation degree clearance completed.', true); })
+        .catch(function(e){ setStatus(e && e.message ? e.message : 'Failed core operation check.', false); });
     }
 
     function archiveStudent(code){
-      google.script.run
-        .withSuccessHandler(function(){ setStatus('Archive flag registered and database detached.', true); })
-        .withFailureHandler(function(e){ setStatus(e && e.message ? e.message : 'System rejected operation.', false); })
-        .archiveStudent(code, state.adminCode);
+      callBackend('archiveStudent', { code: code, adminCode: state.adminCode })
+        .then(function(){ setStatus('Archive flag registered and database detached.', true); })
+        .catch(function(e){ setStatus(e && e.message ? e.message : 'System rejected operation.', false); });
     }
 
     function runRollover(){
       if (!confirm('This commits a severe irreversible institutional state change. Continue?')) return;
-      google.script.run
-        .withSuccessHandler(function(r){ setStatus('Year promotion rollover locked: ' + r.from + ' ➟ ' + r.to, true); })
-        .withFailureHandler(function(e){ setStatus(e && e.message ? e.message : 'Network execution rollover failed.', false); })
-        .runYearRollover(state.adminCode);
+      callBackend('runYearRollover', { adminCode: state.adminCode })
+        .then(function(r){ setStatus('Year promotion rollover locked: ' + r.from + ' ➟ ' + r.to, true); })
+        .catch(function(e){ setStatus(e && e.message ? e.message : 'Network execution rollover failed.', false); });
     }
 
     function escapeHtml(s){
@@ -1501,13 +1511,12 @@ function exportListToWord(id,title){
     function acceptPostponement(row){
       if(!confirm('Accept this postponement request? This will update the student record and failure tracker.')) return;
       setStatus('Processing postponement...', true);
-      google.script.run
-        .withSuccessHandler(function(){
+      callBackend('acceptPostponement', { row: row, adminCode: state.adminCode })
+        .then(function(){
           setStatus('Postponement accepted and records updated', true);
           loadLists();
         })
-        .withFailureHandler(function(e){ setStatus(e.message || 'Failed', false); })
-        .acceptPostponement(row, state.adminCode);
+        .catch(function(e){ setStatus(e.message || 'Failed', false); });
     }
 
     // ===== NEW: Bulk Promotion Interface =====
@@ -1515,8 +1524,8 @@ function exportListToWord(id,title){
       const stage = prompt('Enter stage to promote FROM (1, 2, 3, or 4 for graduation):');
       if(!stage) return;
       setStatus('Loading students...', true);
-      google.script.run
-        .withSuccessHandler(function(students){
+      callBackend('getStudentsForPromotion', { stage: 'Stage ' + stage })
+        .then(function(students){
           if(!students || !students.length){ alert('No active students found for this stage'); return; }
           let html = '<div style="max-height:400px; overflow:auto;"><table style="width:100%;"><thead><tr><th style="width:40px;"><input type="checkbox" id="selAll" onchange="toggleAllStudents(this)"></th><th>Name</th><th>Code</th><th>Group</th></tr></thead><tbody>';
           students.forEach(s => {
@@ -1528,8 +1537,7 @@ function exportListToWord(id,title){
           id('pmBody').innerHTML = html;
           openModal();
         })
-        .withFailureHandler(function(e){ setStatus(e.message || 'Failed', false); })
-        .getStudentsForPromotion('Stage ' + stage);
+        .catch(function(e){ setStatus(e.message || 'Failed', false); });
     }
 
     function toggleAllStudents(cb){
@@ -1569,20 +1577,24 @@ ${names.slice(0,5).join(', ')}${names.length>5 ? '\n...and ' + (names.length-5) 
       
       setStatus('Processing bulk promotion...', true);
       closeModal();
-      google.script.run
-        .withSuccessHandler(function(res){
+      callBackend('bulkPromoteStudents', { 
+          codes: codes, 
+          fromStage: 'Stage ' + fromStage, 
+          toStage: fromStage === '4' ? 'Graduated' : 'Stage ' + toStage, 
+          adminCode: state.adminCode 
+        })
+        .then(function(res){
           setStatus(`Successfully updated ${res.updated} students`, true);
           loadDashboard();
         })
-        .withFailureHandler(function(e){ setStatus(e.message || 'Failed', false); })
-        .bulkPromoteStudents(codes, 'Stage ' + fromStage, fromStage === '4' ? 'Graduated' : 'Stage ' + toStage, state.adminCode);
+        .catch(function(e){ setStatus(e.message || 'Failed', false); });
     }
 
     // ===== NEW: Failures Tracker Editor =====
     function openFailuresEditor(){
       setStatus('Loading failures tracker...', true);
-      google.script.run
-        .withSuccessHandler(function(data){
+      callBackend('getFailuresTrackerAll')
+        .then(function(data){
           if(!data || !data.headers){ alert('No data'); return; }
           let html = '<div style="max-height:500px; overflow:auto; font-size:12px;"><table style="width:100%; border-collapse:collapse;"><thead><tr>';
           data.headers.forEach(h => { html += `<th style="padding:8px; background:#f8fafc; border:1px solid #e4e7ec; position:sticky; top:0;">${escapeHtml(h)}</th>`; });
@@ -1598,13 +1610,12 @@ ${names.slice(0,5).join(', ')}${names.length>5 ? '\n...and ' + (names.length-5) 
           openModal();
           setStatus('Ready', true);
         })
-        .withFailureHandler(function(e){ setStatus(e.message || 'Failed', false); })
-        .getFailuresTrackerAll();
+        .catch(function(e){ setStatus(e.message || 'Failed', false); });
     }
 
     function editFailureRow(idx){
-      google.script.run
-        .withSuccessHandler(function(data){
+      callBackend('getFailuresTrackerAll')
+        .then(function(data){
           const row = data.rows[idx];
           const headers = data.headers;
           let formHtml = '<div class="grid g2" style="gap:12px; max-height:400px; overflow:auto;">';
@@ -1618,13 +1629,12 @@ ${names.slice(0,5).join(', ')}${names.length>5 ? '\n...and ' + (names.length-5) 
           id('pmTitle').textContent = 'Edit Failure Record';
           id('pmBody').innerHTML = formHtml;
         })
-        .withFailureHandler(function(e){ alert('Failed to load'); })
-        .getFailuresTrackerAll();
+        .catch(function(e){ alert('Failed to load'); });
     }
 
     function saveFailureRow(idx){
-      google.script.run
-        .withSuccessHandler(function(data){
+      callBackend('getFailuresTrackerAll')
+        .then(function(data){
           const headers = data.headers;
           const updates = {};
           headers.forEach((h, i) => {
@@ -1632,16 +1642,14 @@ ${names.slice(0,5).join(', ')}${names.length>5 ? '\n...and ' + (names.length-5) 
             if(el) updates[h] = el.value;
           });
           
-          google.script.run
-            .withSuccessHandler(function(){
+          callBackend('updateFailureTrackerRow', { idx: idx, updates: updates, adminCode: state.adminCode })
+            .then(function(){
               alert('Record updated successfully');
               openFailuresEditor();
             })
-            .withFailureHandler(function(e){ alert('Save failed: ' + e.message); })
-            .updateFailureTrackerRow(idx, updates, state.adminCode);
+            .catch(function(e){ alert('Save failed: ' + e.message); });
         })
-        .withFailureHandler(function(e){ alert('Failed'); })
-        .getFailuresTrackerAll();
+        .catch(function(e){ alert('Failed'); });
     }
 
   
